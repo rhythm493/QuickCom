@@ -1,113 +1,115 @@
-# QuickCom Scraper
+# QuickCom
 
-QuickCom is a web application that helps you find and compare product prices across Blinkit, Zepto, and Swiggy Instamart. Instead of checking each app individually, you can search once and see all the options, saving you time and money when ordering groceries or essentials.
+Grocery price comparison API for Indian quick-commerce platforms — Blinkit, Zepto, and Swiggy Instamart.
 
-## Demo
+QuickCom provides a unified REST API that aggregates product data, pricing, and availability across multiple grocery delivery services. Built for programmatic consumption, it handles session management, anti-detection, caching, and data normalization so your application doesn't have to.
 
-### Location Setting & Search Interface
-![Location and Search Interface](./screenshots/quickcom-search-interface.png)
+A lightweight React frontend is included as a reference implementation, but the primary product is the API.
 
-### Product Results Across Platforms
-![Product Results](./screenshots/quickcom-results.png)
+## What It Does
 
-## Features
+- **Unified Search** — Query once, get results from all providers in a single response
+- **Normalized Data** — Every product follows the same `UnifiedProduct` schema regardless of source
+- **Cache-First** — SQLite-backed cache with category-aware TTLs and stale-while-revalidate
+- **Auto-Refresh** — Background scheduler keeps popular queries fresh across all darkstores
+- **Per-Unit Pricing** — Automatic quantity parsing and per-unit price computation for accurate comparisons
+- **Extensible** — Provider pattern makes adding new services (BigBasket, JioMart, etc.) straightforward
 
-- **Multi-platform Search**: Find products across multiple platforms with one search
-- **Location-based Results**: Set your location once to get accurate delivery options
-- **Real-time Comparison**: See prices and delivery times side by side
-- **Visual Indicators**: Easily spot discounts and best deals
-- **Responsive Design**: Works well on both desktop and mobile
-- **Live Updates**: Results appear as they're found thanks to WebSocket integration
-- **Complete Product Info**: See quantity, price, discounts, and delivery times
+## Quick Start
+
+```bash
+# Install & build
+pnpm install --filter backend
+cd backend && npx tsc
+
+# Run
+PORT=5000 node dist/src/index.js
+
+# Test
+curl -X POST http://localhost:5000/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"milk"}'
+```
+
+See [CLAUDE.md](./CLAUDE.md) for full API reference, architecture details, and provider documentation.
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/health` | Health check + provider statuses |
+| `POST` | `/api/search` | Search products across all providers |
+| `POST` | `/api/location` | Set delivery location |
+| `GET`  | `/api/location` | Get current location |
+| `GET`  | `/api/providers` | List provider statuses |
+| `GET`  | `/api/cache/stats` | Cache statistics |
+| `GET`  | `/api/price-history` | Historical price data |
+| `GET`  | `/api/best-price` | Cheapest option across services |
+| `GET`  | `/api/darkstores` | List darkstores |
+| `POST` | `/api/scan-city` | Discover darkstores via grid scan (SSE) |
 
 ## Project Structure
 
 ```
 QuickCom/
-├── backend/                   # Node.js backend server
-│   ├── blinkit/               # Blinkit-specific code
-│   │   ├── searchHelpers.js   # Search and data extraction
-│   │   └── set-location.js    # Location handling
-│   ├── zepto/                 # Zepto-specific code
-│   │   ├── searchHelpers.js   # Search and data extraction
-│   │   └── set-location.js    # Location handling
-│   ├── instamart/             # Swiggy Instamart-specific code
-│   │   ├── searchHelpers.js   # Search and data extraction
-│   │   └── set-location.js    # Location handling
-│   ├── server.js              # Main server file
-│   └── package.json           # Dependencies
-├── frontend/                  # React frontend
+├── backend/
 │   ├── src/
-│   │   ├── components/        # UI components
-│   │   │   ├── SearchForm.tsx # Search interface
-│   │   │   ├── ProductList.tsx # Product display
-│   │   │   └── ui/            # UI elements
-│   │   ├── assets/            # Images and icons
-│   │   ├── App.tsx            # Main app component
-│   │   └── main.tsx           # Entry point
-│   └── package.json           # Dependencies
-└── README.md                  # This documentation
+│   │   ├── index.ts              # Express bootstrap, background init
+│   │   ├── config.ts             # Env-based configuration
+│   │   ├── providers/            # Provider pattern (Blinkit, Zepto, Instamart)
+│   │   ├── browser/pool.ts       # Shared Chrome instance, multi-page
+│   │   ├── cache/                # SQLite cache, scheduler, darkstore scanner
+│   │   └── api/                  # Express routes
+│   ├── .env.example
+│   └── package.json
+├── frontend/                     # Optional reference UI
+│   └── src/
+├── CLAUDE.md                     # Detailed architecture & API docs
+└── README.md
 ```
 
 ## Technology Stack
 
-### Backend
-- **Node.js** - JavaScript runtime
-- **Express** - Web framework
-- **WebSocket** - Real-time communication
-- **Puppeteer** - Web automation and scraping
-- **dotenv** - Environment configuration
+| Layer | Tech |
+|-------|------|
+| Runtime | Node.js, TypeScript |
+| API | Express.js (REST) |
+| Automation | Puppeteer (shared BrowserPool) |
+| Cache | SQLite (WAL mode), stale-while-revalidate |
+| Frontend | React, TypeScript, Tailwind CSS, Vite |
+| Package Manager | pnpm workspaces |
+| Container | Docker (multi-stage build) |
 
-### Frontend
-- **React** - UI framework
-- **TypeScript** - Type-safe JavaScript
-- **Tailwind CSS** - Styling framework
-- **shadcn/ui** - Component library
-- **Vite** - Build tool
+## Configuration
 
-### Installation
+Copy `backend/.env.example` to `backend/.env` and adjust:
 
-1. **Clone the Repository:**
-```bash
-git clone https://github.com/yourusername/QuickCom.git
-cd QuickCom
+```env
+PORT=5000
+DEFAULT_LAT=18.5204
+DEFAULT_LON=73.8567
+DEFAULT_LOCATION=Kothrud, Pune
+CHROME_PATH=/usr/bin/google-chrome-stable
+NODE_ENV=development
 ```
 
-2. **Install Backend Dependencies:**
+## Docker
+
 ```bash
-cd backend
-npm install
+docker build -t quickcom .
+docker run -p 5000:5000 quickcom
 ```
 
-3. **Install Frontend Dependencies:**
-```bash
-cd frontend
-npm install
-```
+## Frontend (Optional)
 
-### Running the Application
+The included React app is a reference consumer for the API. It's not required to use QuickCom — any HTTP client can integrate with the REST endpoints.
 
-1. **Start the Backend Server:**
-```bash
-cd backend
-npm start
-```
-The backend will run on `http://localhost:5000`
-
-2. **Start the Frontend Development Server:**
 ```bash
 cd frontend
-npm run dev
+pnpm install
+pnpm dev
 ```
-The frontend will run on `http://localhost:5173`
 
-3. **Access the Dashboard:**
-Open your browser and navigate to `http://localhost:5173`
+## License
 
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
----
-
-Happy shopping and happy scraping! 🚀
+MIT
