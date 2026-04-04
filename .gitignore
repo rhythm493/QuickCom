@@ -13,6 +13,14 @@ yarn.lock
 .env.test.local
 .env.production.local
 
+# Saved sessions (contains auth credentials)
+backend/blinkit/.sessions/
+backend/zepto/.sessions/
+backend/instamart/.sessions/
+
+# TypeScript build output
+backend/dist/
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -36,3 +44,6 @@ coverage/
 # Temporary files
 .tmp/
 .temp/
+
+# Cache database
+backend/data/

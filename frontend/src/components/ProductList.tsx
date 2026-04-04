@@ -2,7 +2,7 @@
 
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ImageOff, Search, Tag, Clock } from "lucide-react";
+import { ImageOff, Search, Tag, Clock, Database, RefreshCw } from "lucide-react";
 
 type Service = "blinkit" | "zepto" | "instamart";
 
@@ -25,6 +25,8 @@ interface ProductListProps {
   isCompact?: boolean;
   serviceName?: Service;
   isLoading?: boolean;
+  cached?: boolean;
+  stale?: boolean;
 }
 
 export function ProductList({
@@ -32,6 +34,8 @@ export function ProductList({
   isCompact = false,
   serviceName,
   isLoading = false,
+  cached = false,
+  stale = false,
 }: ProductListProps) {
   // Updated serviceColors to remove button styles
   const serviceColors = {
@@ -56,7 +60,7 @@ export function ProductList({
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center p-12 text-gray-500">
+      <div className="flex justify-center items-center p-12 text-gray-500 dark:text-gray-400">
         <div className="flex flex-col items-center">
           <div className="w-12 h-12 border-4 border-t-transparent border-yellow-500 rounded-full animate-spin mb-4"></div>
           <p>Loading products...</p>
@@ -67,10 +71,10 @@ export function ProductList({
 
   if (products.length === 0) {
     return (
-      <div className="flex justify-center items-center p-12 bg-gray-50 rounded-lg border border-gray-200 text-gray-500">
+      <div className="flex justify-center items-center p-12 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400">
         <div className="flex flex-col items-center">
-          <Search className="w-12 h-12 text-gray-400 mb-2" />
-          <h3 className="text-lg font-medium mb-1">No Products Found</h3>
+          <Search className="w-12 h-12 text-gray-400 dark:text-gray-500 mb-2" />
+          <h3 className="text-lg font-medium mb-1 text-gray-700 dark:text-gray-200">No Products Found</h3>
           <p className="text-sm text-center">
             Try a different search term or check a different service.
           </p>
@@ -84,6 +88,26 @@ export function ProductList({
     : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6";
 
   return (
+    <div>
+      {cached && (
+        <div className={`flex items-center gap-1.5 mb-3 text-xs px-2.5 py-1.5 rounded-md w-fit ${
+          stale
+            ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+            : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+        }`}>
+          {stale ? (
+            <>
+              <RefreshCw className="h-3 w-3 animate-spin" />
+              <span>Cached results - refreshing in background...</span>
+            </>
+          ) : (
+            <>
+              <Database className="h-3 w-3" />
+              <span>Instant results from cache</span>
+            </>
+          )}
+        </div>
+      )}
     <div className={gridClass}>
       {products.map((product) => {
         const serviceColor = getServiceColor(product);
@@ -91,7 +115,7 @@ export function ProductList({
         return (
           <Card
             key={product.id}
-            className={`overflow-hidden flex flex-col h-full group relative border-slate-200 shadow-lg hover:shadow-xl transition-shadow duration-300 rounded-lg ${
+            className={`overflow-hidden flex flex-col h-full group relative border-slate-200 dark:border-gray-700 shadow-lg hover:shadow-xl dark:shadow-gray-900/50 transition-all duration-300 rounded-lg dark:bg-gray-800 ${
               isCompact ? "compact" : ""
             }`}
           >
@@ -141,25 +165,25 @@ export function ProductList({
                   <div
                     className={`flex items-center justify-center ${
                       isCompact ? "h-24" : "h-32 sm:h-40"
-                    } bg-slate-100 rounded-lg mb-2 sm:mb-3`}
+                    } bg-slate-100 dark:bg-gray-700 rounded-lg mb-2 sm:mb-3`}
                   >
-                    <ImageOff className="h-10 w-10 text-slate-400" />
+                    <ImageOff className="h-10 w-10 text-slate-400 dark:text-gray-500" />
                   </div>
                 )}
               </div>
               <h3
                 className={`text-sm ${
                   isCompact ? "" : "sm:text-base"
-                } font-semibold mb-1 group-hover:text-orange-600 transition-colors duration-300 truncate`}
+                } font-semibold mb-1 text-gray-900 dark:text-gray-100 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors duration-300 truncate`}
                 title={product.name}
               >
                 {product.name}
               </h3>
-              <p className="text-xs sm:text-sm text-gray-600 mb-1">
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mb-1">
                 {product.quantity}
               </p>
                 {product.deliveryTime && (
-                <div className="flex items-center text-xs text-green-700 mb-1.5">
+                <div className="flex items-center text-xs text-green-700 dark:text-green-400 mb-1.5">
                   <Clock className="h-3 w-3 mr-1" />
                   <span>{product.deliveryTime === "earliest" ? "10min" : product.deliveryTime}</span>
                 </div>
@@ -175,13 +199,13 @@ export function ProductList({
                     {product.price}
                   </span>
                   {product.originalPrice && (
-                    <span className="text-gray-400 line-through text-xs">
+                    <span className="text-gray-400 dark:text-gray-500 line-through text-xs">
                       {product.originalPrice}
                     </span>
                   )}
                 </div>
                 {product.savings && (
-                  <p className="text-xs text-green-600 font-medium">
+                  <p className="text-xs text-green-600 dark:text-green-400 font-medium">
                     Save {product.savings}
                   </p>
                 )}
@@ -190,6 +214,7 @@ export function ProductList({
           </Card>
         );
       })}
+    </div>
     </div>
   );
 }

@@ -1,26 +1,28 @@
-# Multi-stage build for QuickCom application
+# Multi-stage build for QuickCom
 
-# Stage 1: Build the frontend
+# Stage 1: Build frontend
 FROM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 COPY frontend/ ./
-# Set production environment variables for the frontend build
-ARG FRONTEND_URL=https://quickcom.onrender.com
-ENV VITE_WS_URL=wss://quickcom.onrender.com
-# Explicitly set base path for assets
-ENV BASE_URL=/
 RUN npm run build
 
-# Stage 2: Set up the Node.js backend with Puppeteer
-FROM node:20 AS backend
+# Stage 2: Build backend TypeScript
+FROM node:20-alpine AS backend-build
+WORKDIR /app
+COPY backend/package.json backend/pnpm-lock.yaml* ./
+RUN npm install -g pnpm && pnpm install --frozen-lockfile || pnpm install
+COPY backend/src/ ./src/
+COPY backend/tsconfig.json ./
+RUN npx tsc
 
-# Install Puppeteer dependencies, Google Chrome and Xvfb for virtual display
+# Stage 3: Production runtime with Chrome
+FROM node:20
+
+# Install Chrome + Puppeteer deps
 RUN apt-get update && apt-get install -y \
     fonts-liberation \
-    gconf-service \
-    libappindicator1 \
     libasound2 \
     libatk1.0-0 \
     libcairo2 \
@@ -29,17 +31,10 @@ RUN apt-get update && apt-get install -y \
     libgbm-dev \
     libgdk-pixbuf2.0-0 \
     libgtk-3-0 \
-    libicu-dev \
-    libjpeg-dev \
     libnspr4 \
     libnss3 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
-    libpng-dev \
-    x11vnc \
-    fluxbox \
-    xterm \
-    x11-utils \
     libx11-6 \
     libx11-xcb1 \
     libxcb1 \
@@ -59,46 +54,38 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     ca-certificates \
     && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list \
     && apt-get update \
     && apt-get install -y google-chrome-stable \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-
-# Verify Chrome installation
 RUN google-chrome-stable --version
 
-# Set up working directory
 WORKDIR /app
 
-# Copy backend package.json and install dependencies
-COPY backend/package.json backend/package-lock.json* ./
-RUN npm ci
+# Install production deps only
+COPY backend/package.json backend/pnpm-lock.yaml* ./
+RUN npm install -g pnpm && pnpm install --prod --frozen-lockfile || pnpm install --prod
 
-# Copy backend files
-COPY backend/ ./
+# Copy compiled backend
+COPY --from=backend-build /app/dist ./dist
 
-# Copy built frontend files to the static directory
+# Copy frontend build
 COPY --from=frontend-build /app/frontend/dist ./public
 
-# Create directory for Puppeteer cache
-RUN mkdir -p /opt/render/.cache/puppeteer
+# Create data directory
+RUN mkdir -p /app/data
 
-# Set environment variables
+# Environment
 ENV NODE_ENV=production
 ENV PORT=10000
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV DEBUG="puppeteer:*"
 
-# Expose the port the app runs on
 EXPOSE 10000
-EXPOSE 5900
 
-# Create a startup script to run VNC, Fluxbox, and then start the server
-RUN echo '#!/bin/bash\n\n# Start Fluxbox window manager\nfluxbox &\n\n# Start x11vnc server\nx11vnc -display :0 -forever -nopw -listen 0.0.0.0 -rfbport 5900 &\n\n# Wait for X to be ready\nsleep 2\n\n# Start the Node.js server\nexec node server.js' > /app/start.sh && \
-    chmod +x /app/start.sh
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
+  CMD curl -f http://localhost:10000/api/health || exit 1
 
-# Start the server with VNC and Fluxbox
-CMD ["/app/start.sh"]
+CMD ["node", "dist/src/index.js"]
