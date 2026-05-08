@@ -1,0 +1,30 @@
+services:
+  quickcom:
+    image: ghcr.io/rhythm493/quickcom:main
+    container_name: quickcom
+    ports:
+      - "${QUICKCOM_BIND_IP:-0.0.0.0}:10000:10000"
+    environment:
+      - NODE_ENV=production
+      - PORT=10000
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - DEFAULT_LAT=${DEFAULT_LAT:-18.5204}
+      - DEFAULT_LON=${DEFAULT_LON:-73.8567}
+      - DEFAULT_LOCATION=${DEFAULT_LOCATION:-Kothrud, Pune}
+    volumes:
+      - quickcom-data:/app/data
+      - quickcom-sessions:/app/.sessions
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start-period: 60s
+
+volumes:
+  quickcom-data:
+    driver: local
+  quickcom-sessions:
+    driver: local
