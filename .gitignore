@@ -48,3 +48,6 @@ coverage/
 
 # Cache database
 backend/data/
+
+# API research captures (6MB+ of raw API logs / one-off reverse-engineering scripts)
+backend/research/

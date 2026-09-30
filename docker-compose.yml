@@ -1,0 +1,55 @@
+services:
+  quickcom:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quickcom
+    ports:
+      - "10000:10000"
+    environment:
+      - NODE_ENV=production
+      - PORT=10000
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - DEFAULT_LAT=${DEFAULT_LAT:-18.5204}
+      - DEFAULT_LON=${DEFAULT_LON:-73.8567}
+      - DEFAULT_LOCATION=${DEFAULT_LOCATION:-Kothrud, Pune}
+    volumes:
+      - quickcom-data:/app/data
+      - quickcom-sessions:/app/.sessions
+    networks:
+      - quickcom-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start-period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # Cloudflared tunnel — exposes QuickCom publicly via outbound-only connection
+  # Set CLOUDFLARE_TUNNEL_TOKEN in .env for named tunnel, or use quick tunnel command
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: cloudflared
+  #   command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   networks:
+  #     - quickcom-network
+  #   restart: unless-stopped
+  #   # No ports needed — outbound only to Cloudflare edge
+
+networks:
+  quickcom-network:
+    driver: bridge
+
+volumes:
+  quickcom-data:
+    driver: local
+  quickcom-sessions:
+    driver: local
