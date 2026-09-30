@@ -4,7 +4,7 @@
 FROM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/pnpm-lock.yaml* ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+RUN npm install -g pnpm@10 && pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm run build
 
@@ -12,7 +12,7 @@ RUN pnpm run build
 FROM node:20-alpine AS backend-build
 WORKDIR /app
 COPY backend/package.json backend/pnpm-lock.yaml* ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+RUN npm install -g pnpm@10 && pnpm install --frozen-lockfile
 COPY backend/src/ ./src/
 COPY backend/tsconfig.json ./
 RUN npx tsc
@@ -64,7 +64,7 @@ WORKDIR /app
 
 # Install production deps only
 COPY backend/package.json backend/pnpm-lock.yaml* ./
-RUN npm install -g pnpm && pnpm install --prod --frozen-lockfile
+RUN npm install -g pnpm@10 && pnpm install --prod --frozen-lockfile
 
 # Copy compiled backend
 COPY --from=backend-build /app/dist ./dist
