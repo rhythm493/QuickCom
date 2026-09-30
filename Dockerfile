@@ -75,8 +75,7 @@ COPY backend/pnpm-workspace.yaml ./
 # stage whose better-sqlite3 copy is actually loaded, so this is where the native
 # binding must be compiled. Verify with the assertion below.
 RUN npm install -g pnpm@10 && pnpm install --prod --frozen-lockfile \
- && node -e "require('better-sqlite3')" \
- && echo "better-sqlite3 native binding OK"
+ && node -e "const D=require('better-sqlite3');new D(':memory:').exec('create table t(a)');console.log('better-sqlite3 native binding OK')"
 
 # Copy compiled backend
 COPY --from=backend-build /app/dist ./dist
