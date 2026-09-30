@@ -4,6 +4,7 @@
 FROM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/pnpm-lock.yaml* ./
+COPY frontend/pnpm-workspace.yaml ./
 RUN npm install -g pnpm@10 && pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm run build
@@ -12,6 +13,11 @@ RUN pnpm run build
 FROM node:20-alpine AS backend-build
 WORKDIR /app
 COPY backend/package.json backend/pnpm-lock.yaml* ./
+# pnpm-workspace.yaml carries the onlyBuiltDependencies allowlist. Without it in
+# the build context pnpm silently skips every postinstall script, and
+# better-sqlite3 ships without its compiled .node binding -- the cache then dies
+# at boot with "Could not locate the bindings file" instead of failing the build.
+COPY backend/pnpm-workspace.yaml ./
 RUN npm install -g pnpm@10 && pnpm install --frozen-lockfile
 COPY backend/src/ ./src/
 COPY backend/tsconfig.json ./
@@ -64,7 +70,13 @@ WORKDIR /app
 
 # Install production deps only
 COPY backend/package.json backend/pnpm-lock.yaml* ./
-RUN npm install -g pnpm@10 && pnpm install --prod --frozen-lockfile
+COPY backend/pnpm-workspace.yaml ./
+# --prod must NOT be combined with --ignore-scripts here: the runtime is the only
+# stage whose better-sqlite3 copy is actually loaded, so this is where the native
+# binding must be compiled. Verify with the assertion below.
+RUN npm install -g pnpm@10 && pnpm install --prod --frozen-lockfile \
+ && node -e "require('better-sqlite3')" \
+ && echo "better-sqlite3 native binding OK"
 
 # Copy compiled backend
 COPY --from=backend-build /app/dist ./dist
