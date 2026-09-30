@@ -1,0 +1,182 @@
+# QuickCom on trading-eu (Contabo, Lauterbourg FR) -- stacks/quickcom-trading-eu.yml
+#
+# WHY THIS FILE IS NOT JUST THE GENERIC STACK
+# -------------------------------------------
+# Blinkit/Zepto/Instamart geo-gate by source IP. Measured from trading-eu
+# (169.58.66.151, FR) with real headless Chrome on 2026-09-30:
+#
+#   blinkit.com     -> 403 cf-mitigated: challenge (plain curl); the in-page
+#                      page.evaluate(fetch) still returned 200 + real
+#                      product IDs, so Blinkit alone is partly usable from EU
+#   zepto.com       -> CloudFront 403 "Request blocked. We can't connect..."
+#   instamart       -> AWS WAF "We'll be back shortly"
+#
+# Neither OCI box helps: VM1 (130.61.153.164) and VM2 (92.5.27.159) are BOTH
+# in eu-frankfurt-1, so "route via the E2.1 servers" still egresses from
+# Germany, which behaves identically to France.
+#
+# The only Indian egress on the tailnet is the dietpi Raspberry Pi at home,
+# 122.167.113.141 = Pune, Maharashtra (Bharti Airtel AS24560). It already
+# runs tailscaled and advertises 0.0.0.0/0, so it is a full-tunnel exit node,
+# and the arr stack on this same host already uses it via the ts-arr sidecar.
+# QuickCom therefore gets its own sidecar, ts-quickcom, cloning that pattern.
+# Bonus: QuickCom's default location is Kothrud, Pune, so requests now egress
+# from the same city as the darkstores being queried.
+#
+# The sidecar, not QuickCom, owns the network namespace. QuickCom joins with
+# network_mode: "service:ts-quickcom". The uid route guard identifies QuickCom
+# traffic by uidrange 1000-1000 -- which is why the Dockerfile has a
+# `USER node` directive; running as root would make QuickCom indistinguishable
+# from tailscaled and the fail-closed guard could not be applied to it.
+#
+# Published on 127.0.0.1 only. Docker's port publishing bypasses ufw, so
+# 0.0.0.0 here would mean public regardless of firewall rules. Callers reach
+# it over the nexus_net bridge by container name (ts-quickcom:10000).
+
+services:
+  ts-quickcom:
+    image: docker.io/tailscale/tailscale:v1.102.3
+    container_name: ts-quickcom
+    hostname: ts-quickcom
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      TS_STATE_DIR: /state
+      TS_USERSPACE: "false"
+      TS_HOSTNAME: ts-quickcom
+      TS_EXTRA_ARGS: "--accept-dns=false"
+    # containerboot is NOT used: it enforces a 60s deadline on interactive
+    # login then exits, which restarts the container, which rotates the
+    # network namespace and silently orphans the quickcom container that
+    # joined the previous one. This supervisor runs tailscaled directly and
+    # lets `tailscale up` block INDEFINITELY until the login URL is clicked,
+    # restarting tailscaled INSIDE the same netns if it ever dies.
+    #
+    # THE FAIL-CLOSED GUARD: quickcom runs as uid 1000 (node), tailscaled as
+    # root. `tailscale up` resets unspecified prefs, so the exit node is
+    # pinned in the up command itself -- update it here if the Pi's tailnet
+    # IP changes. The guard adds an ip rule (pref 5265) sending uid-1000
+    # traffic to table 9999 whenever the tunnel has no default route (table
+    # 52 empty). Table 9999 reaches only the docker bridge; everything else
+    # is unreachable. So QuickCom can NEVER fall back to eth0 and quietly
+    # query Indian stores from a French IP -- it fails closed instead --
+    # while root-owned tailscaled keeps full access to bootstrap/re-auth.
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        # The guard is installed FIRST, before tailscaled is even started, and
+        # runs in its own loop. It must not be sequenced after `tailscale up`:
+        # `up` BLOCKS while the node is unauthenticated, so a guard placed
+        # after it does not exist for the whole period the sidecar is waiting
+        # for a login -- which is exactly when quickcom would silently fall
+        # back to eth0 and query Indian stores from a French IP (Blinkit
+        # answers, Zepto returns zero products, no error anywhere).
+        ip route replace unreachable default table 9999
+        ip route replace 172.30.0.0/24 dev eth0 table 9999
+        (
+          while true; do
+            if ip route show table 52 2>/dev/null | grep -q '^default'; then
+              ip rule del pref 5265 2>/dev/null
+            else
+              ip rule add pref 5265 uidrange 1000-1000 lookup 9999 2>/dev/null
+            fi
+            sleep 0.5
+          done
+        ) &
+        while true; do
+          tailscaled --statedir=/state --socket=/tmp/tailscaled.sock &
+          TD=$$!
+          for i in $$(seq 1 60); do [ -S /tmp/tailscaled.sock ] && break; sleep 1; done
+          tailscale --socket=/tmp/tailscaled.sock up --accept-dns=false --hostname=ts-quickcom \
+            --exit-node=100.124.244.55 --exit-node-allow-lan-access || true
+          wait $$TD
+          sleep 2
+        done
+    volumes:
+      - /srv/quickcom/tailscale:/state
+    # NOTE: docker's embedded DNS is used deliberately. A public resolver
+    # would be routed via the netns default route, which is dead during
+    # tailscale bootstrap and blocked by the fail-closed guard, wedging
+    # re-auth. The embedded resolver hands the query to the host's dockerd,
+    # so name resolution works in every state.
+    ports:
+      - "127.0.0.1:10000:10000"
+    networks:
+      quickcom_net:
+        ipv4_address: 172.30.0.2
+        # v6 is pinned, not left to Docker's automatic ULA assignment, so
+        # the host-level kill-switch (qbt-egress.sh) has a known address to
+        # drop. An unpinned ULA would still be NAT66-masqueraded out the
+        # host's global 2a02: address -- the exact v4 bypass the existing
+        # kill-switch documents for the ts-arr netns.
+        ipv6_address: fd00:6e78:7573::2
+    security_opt:
+      - no-new-privileges:true
+    memswap_limit: 256M
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 256M
+
+  quickcom:
+    image: quickcom:local
+    container_name: quickcom
+    restart: unless-stopped
+    depends_on:
+      - ts-quickcom
+    # Shares the sidecar's netns, so all egress goes through the tunnel.
+    network_mode: "service:ts-quickcom"
+    environment:
+      NODE_ENV: production
+      PORT: "10000"
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+      # Kothrud, Pune -- matches the exit node's city, so the darkstore
+      # resolved is one that plausibly stocks the item.
+      DEFAULT_LAT: "18.5204"
+      DEFAULT_LON: "73.8567"
+      DEFAULT_LOCATION: "Kothrud, Pune"
+      # Resolved from /app, not __dirname, because the image runs
+      # dist/src/index.js out of /app/dist. See config.ts.
+      DATA_DIR: /app/data
+      SESSIONS_DIR: /app/.sessions
+    volumes:
+      # Named volumes inherit uid/gid from the image path they initialise
+      # from, and the Dockerfile chowns /app/{data,.sessions} to node, so
+      # the non-root process can write them.
+      - quickcom-data:/app/data
+      - quickcom-sessions:/app/.sessions
+    # Chromium needs more than the 64MB default; it renders provider pages
+    # in several tabs while the cache scheduler runs in the background.
+    shm_size: 1gb
+    security_opt:
+      - no-new-privileges:true
+    # memswap_limit == memory limit ON PURPOSE: with a memory limit but no
+    # swap limit Docker grants 2x memory as swap, which would let one
+    # container eat the host swapfile and defeat the OOM insurance.
+    memswap_limit: 4G
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+
+networks:
+  quickcom_net:
+    name: nexus_net
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+        - subnet: fd00:6e78:7573::/64
+
+volumes:
+  quickcom-data:
+    driver: local
+  quickcom-sessions:
+    driver: local
