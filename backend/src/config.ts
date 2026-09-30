@@ -33,8 +33,12 @@ export const config: AppConfig = {
     lon: requireEnvFloat('DEFAULT_LON', 73.8567),
     label: process.env.DEFAULT_LOCATION || 'Kothrud, Pune',
   },
-  sessionsDir: path.resolve(__dirname, '..', '.sessions'),
-  dataDir: path.resolve(__dirname, '..', 'data'),
-  dbPath: path.resolve(__dirname, '..', 'data', 'quickcom.db'),
+  // Resolved relative to the compiled dist dir by default. Containers MUST
+  // override these — the Dockerfile puts dist/ one level deeper than the
+  // volume mount points (/app/data, /app/.sessions), so the defaults would
+  // silently write to /app/dist/data and lose the SQLite cache on rebuild.
+  sessionsDir: path.resolve(process.env.SESSIONS_DIR || path.join(__dirname, '..', '.sessions')),
+  dataDir: path.resolve(process.env.DATA_DIR || path.join(__dirname, '..', 'data')),
+  dbPath: path.resolve(process.env.DB_PATH || path.join(__dirname, '..', 'data', 'quickcom.db')),
   nodeEnv: process.env.NODE_ENV || 'development',
 };

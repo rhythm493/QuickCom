@@ -72,8 +72,12 @@ COPY --from=backend-build /app/dist ./dist
 # Copy frontend build (code expects it at /app/frontend/dist from __dirname)
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create writable dirs. Running as non-root (uid 1000) is required for the
+# fail-closed Tailscale exit-node route guard, which identifies app traffic by
+# uidrange 1000-1000 in the shared network namespace. It also lets Chromium
+# use its own sandbox and gives it a writable HOME for the profile dir.
+RUN mkdir -p /app/data /app/.sessions && chown -R node:node /app
+USER node
 
 # Environment
 ENV NODE_ENV=production
@@ -83,7 +87,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 EXPOSE 10000
 
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD curl -f http://localhost:10000/api/health || exit 1
 
 CMD ["node", "dist/src/index.js"]

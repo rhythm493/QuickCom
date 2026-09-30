@@ -17,7 +17,7 @@ export function CacheStatsCard() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/cache-stats`)
+      const res = await fetch(`${API_BASE}/api/cache/stats`)
       if (res.ok) {
         const data = await res.json()
         setStats(data)

@@ -46,7 +46,7 @@ export function AnalyticsView() {
 
     try {
       // Fetch best prices
-      const bestPriceRes = await fetch(`${API_BASE}/api/best-price?query=${encodeURIComponent(query)}&locationId=1`)
+      const bestPriceRes = await fetch(`${API_BASE}/api/cache/best-price?query=${encodeURIComponent(query)}&locationId=1`)
       if (bestPriceRes.ok) {
         const data = await bestPriceRes.json()
         setBestPrices(data.results || [])
@@ -56,7 +56,7 @@ export function AnalyticsView() {
         for (const result of (data.results || [])) {
           try {
             const histRes = await fetch(
-              `${API_BASE}/api/price-history?service=${result.service}&productId=${result.darkstore_id}&days=30`
+              `${API_BASE}/api/cache/price-history?service=${result.service}&productId=${result.darkstore_id}&days=30`
             )
             if (histRes.ok) {
               const histData = await histRes.json()

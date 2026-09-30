@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { ProviderRegistry } from '../providers/registry';
-import { UnifiedProduct, SearchResult } from '../providers/types';
+import { UnifiedProduct, SearchResult, parsePriceToPaise, parseQuantity, computePerUnitPrice, formatPrice } from '../providers/types';
 import { cacheManager } from '../cache/cache-manager';
 import { darkstoreTracker } from '../cache/darkstore-tracker';
 
@@ -50,7 +50,7 @@ export function createSearchRouter(registry: ProviderRegistry): Router {
 
               if (cached.hit && cached.fresh) {
                 results[providerName] = {
-                  products: cached.products.slice(0, limit) as unknown as UnifiedProduct[],
+                  products: cached.products.slice(0, limit).map(toUnifiedProduct),
                   totalFound: cached.products.length,
                   searchTimeMs: Date.now() - start,
                   cached: true,
@@ -62,7 +62,7 @@ export function createSearchRouter(registry: ProviderRegistry): Router {
               if (cached.hit && cached.stale) {
                 // Serve stale, refresh in background
                 results[providerName] = {
-                  products: cached.products.slice(0, limit) as unknown as UnifiedProduct[],
+                  products: cached.products.slice(0, limit).map(toUnifiedProduct),
                   totalFound: cached.products.length,
                   searchTimeMs: Date.now() - start,
                   cached: true,
@@ -128,6 +128,45 @@ export function createSearchRouter(registry: ProviderRegistry): Router {
   });
 
   return router;
+}
+
+/**
+ * Convert CachedProduct back to UnifiedProduct.
+ *
+ * The cache stores prices as display strings ("₹149.00") but UnifiedProduct
+ * consumers (and the Nexus Go client) read `pricePaise`. Without this inverse
+ * conversion, cached results deserialize with pricePaise=0, so downstream
+ * consumers show a price of zero. Cache hits are the common path at runtime
+ * because the scheduler pre-warms popular queries, so this must stay in sync
+ * with toCachedProduct.
+ */
+function toUnifiedProduct(p: any): UnifiedProduct {
+  const pricePaise = parsePriceToPaise(p.price ?? '');
+  const mrpPaise = p.originalPrice ? parsePriceToPaise(p.originalPrice) : null;
+  const qty = parseQuantity(p.quantity ?? '');
+
+  return {
+    id: p.id,
+    name: p.name,
+    brand: p.brand ?? null,
+    pricePaise,
+    priceDisplay: p.price ?? formatPrice(pricePaise),
+    mrpPaise,
+    mrpDisplay: p.originalPrice ?? (mrpPaise ? formatPrice(mrpPaise) : null),
+    quantity: p.quantity ?? '',
+    quantityValue: qty.value,
+    quantityUnit: qty.unit,
+    perUnitPricePaise: computePerUnitPrice(pricePaise, qty.value, qty.unit),
+    deliveryTime: p.deliveryTime ?? '',
+    discount: p.discount ?? null,
+    discountPct: p.discountPct ?? null,
+    imageUrl: p.imageUrl ?? '',
+    productUrl: p.productUrl ?? null,
+    available: p.available ?? true,
+    rating: p.rating,
+    totalRatings: p.totalRatings,
+    source: p.source,
+  };
 }
 
 /** Convert UnifiedProduct to CachedProduct format for storage */
