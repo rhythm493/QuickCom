@@ -38,6 +38,14 @@ services:
     image: docker.io/tailscale/tailscale:v1.102.3
     container_name: ts-quickcom
     hostname: ts-quickcom
+    # LOAD-BEARING. Compose defaults this to "no", which means a host reboot
+    # kills the sidecar permanently: quickcom then cannot rejoin the netns and
+    # dies with "cannot join network namespace of a non running container",
+    # taking Indian grocery search down until someone notices. Restarting the
+    # sidecar is safe because the supervisor keeps the netns stable across
+    # restarts of tailscaled, and the state dir is a bind mount, so no
+    # re-auth is needed.
+    restart: unless-stopped
     cap_add:
       - NET_ADMIN
       - NET_RAW
