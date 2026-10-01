@@ -202,6 +202,29 @@ The sidecar still needs a one-time interactive login. Until it is authorized the
 prints a URL of the form `https://login.tailscale.com/a/<hex>`; the sidecar keeps
 retrying and QuickCom correctly returns zero results until that is done.
 
+### Surviving a host reboot
+
+This bit the deployment once already, so it is worth being explicit:
+
+1. **`ts-quickcom` MUST have `restart: unless-stopped`.** Compose defaults a service with
+   no `restart:` to `"no"`. Without it, the first host reboot killed the sidecar
+   permanently, and `quickcom` then died with
+   `cannot join network namespace of a non running container` — Indian grocery search
+   was down for ~12 hours before it was noticed. Restarting the sidecar is safe: the
+   supervisor keeps the netns stable and `/srv/quickcom/tailscale` is a bind mount, so
+   no re-auth is needed.
+2. **`nexus` MUST pin its address on `nexus_net`** (`172.30.0.3` /
+   `fd00:6e78:7573::3` — see `stacks/nexus-trading-eu.yml` in the nexus repo).
+   `nexus_net` is created here with `enable_ipv6`, and `ts-quickcom` statically reserves
+   `.2` on both families. Docker's allocator hands out the *lowest free* address, so an
+   unpinned `nexus` — restarted while the sidecar is still down, which is exactly the
+   post-reboot ordering — squats `.2` and `ts-quickcom` then fails to start with
+   `Address already in use`.
+
+Verified by an actual `shutdown -r`: all three containers return on their own, egress
+comes back as `122.167.113.141` (Pune), and the SQLite cache survives so the first
+search after reboot is still a hit.
+
 Host-level complement: `/usr/local/sbin/qbt-egress.sh` (systemd unit `qbt-egress.service`)
 installs a `QBT-EGRESS` chain in `DOCKER-USER` that drops unmarked traffic from the
 `ts-arr` and `ts-quickcom` netns (v4 + v6) while allowing the tailnet, Docker bridges,
